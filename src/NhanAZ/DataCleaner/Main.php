@@ -14,7 +14,7 @@ class Main extends PluginBase {
 		return array_merge($this->getConfig()->get("exceptionData", []), [".", ".."]);
 	}
 
-	private function deleteMessage(array $deleted): void {
+	public function deleteMessage(array $deleted): void {
 		$this->getLogger()->info("§fDeleted data (" . count($deleted) . "): §a" . implode("§f,§a ", $deleted));
 	}
 
@@ -24,26 +24,14 @@ class Main extends PluginBase {
 	 * @return bool true on success or false on failure.
 	 */
 	public function delete(\DirectoryIterator $fileInfo, bool $justEmpty = false): bool {
-		if ($fileInfo->isDir()) {
-			return $this->deleteFolder($fileInfo, $justEmpty);
-		} elseif ($fileInfo->isFile()) {
-			return $this->deleteFile($fileInfo);
-		}
-
-		throw new \InvalidArgumentException($fileInfo->getFilename() . " is a " . $fileInfo->getType() . " but he must be a file or folder");
+		return Cleaner::delete($fileInfo, $justEmpty, $this->getExceptionData());
 	}
 
 	/**
 	 * @return bool true on success or false on failure.
 	 */
 	public function deleteFile(\DirectoryIterator $file): bool {
-		if (!$file->isFile()) {
-			throw new \InvalidArgumentException($file->getFilename() . " is a " . $file->getType() . " but he must be a file");
-		} elseif (in_array($file->getFilename(), $this->getExceptionData(), true)) {
-			return false;
-		}
-
-		return @unlink($file->getPathname());
+		return Cleaner::deleteFile($file, $this->getExceptionData());
 	}
 
 	/**
@@ -52,49 +40,14 @@ class Main extends PluginBase {
 	 * @return bool true on success or false on failure.
 	 */
 	public function deleteFolder(\DirectoryIterator $folder, bool $justEmpty = false): bool {
-		if (!$folder->isDir()) {
-			throw new \InvalidArgumentException($folder->getFilename() . " is a " . $folder->getType() . " but he must be a folder");
-		} elseif (in_array($folder->getFilename(), $this->getExceptionData(), true)) {
-			return false;
-		}
-
-		if ($justEmpty) {
-			$directoryIterator = new \DirectoryIterator($folder->getPathname());
-			foreach ($directoryIterator as $fileInfo) {
-				if ($fileInfo->isFile()) return false;
-				if (!$fileInfo->isDot()) {
-					if (!$this->deleteFolder($fileInfo, true)) {
-						return false;
-					}
-				}
-			}
-
-			$filePathName = $folder->getPathname();
-			// Check if is empty
-			if (count(scandir($filePathName)) <= 2) {
-				return @rmdir($filePathName);
-			}
-		} elseif ($this->deleteFilesInFolder($folder)) {
-			return @rmdir($folder->getPathname());
-		}
-
-		return false;
+		return Cleaner::deleteFolder($folder, $justEmpty, $this->getExceptionData());
 	}
 
 	/**
 	 * @return bool true on success or false on failure.
 	 */
 	public function deleteFilesInFolder(\DirectoryIterator $folder): bool {
-		$directoryIterator = new \DirectoryIterator($folder->getPathname());
-		foreach ($directoryIterator as $fileInfo) {
-			if (!$fileInfo->isDot()) {
-				if (!$this->delete($fileInfo, false)) {
-					return false;
-				}
-			}
-		}
-
-		return true;
+		return Cleaner::deleteFilesInFolder($folder, $this->getExceptionData());
 	}
 
 	protected function onEnable(): void {
@@ -111,16 +64,12 @@ class Main extends PluginBase {
 				$this->getServer()->getPluginManager()->getPlugins()
 			);
 
-			$deleted = [];
-			$directoryIterator = new \DirectoryIterator($this->getServer()->getDataPath() . "plugin_data" . DIRECTORY_SEPARATOR);
-			foreach ($directoryIterator as $fileInfo) {
-				$fileName = $fileInfo->getFilename();
-				$success = $this->delete($fileInfo, in_array($fileName, $plugins, true));
-				if ($success) {
-					array_push($deleted, $fileName);
-				}
-			}
-			$this->deleteMessage($deleted);
+			$this->getServer()->getAsyncPool()->submitTask(new CleanupTask(
+				$this->getServer()->getDataPath() . "plugin_data" . DIRECTORY_SEPARATOR,
+				$plugins,
+				$this->getExceptionData(),
+				$this
+			));
 		}), $this->getConfig()->get("delayTime", 1) * 20);
 	}
 }
