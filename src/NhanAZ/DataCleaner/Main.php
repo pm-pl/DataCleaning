@@ -66,6 +66,7 @@ class Main extends PluginBase {
 
 			$this->getServer()->getAsyncPool()->submitTask(new CleanupTask(
 				$this->getServer()->getDataPath() . "plugin_data" . DIRECTORY_SEPARATOR,
+				rtrim($this->getDataFolder(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . "DeleteBackup" . DIRECTORY_SEPARATOR,
 				$plugins,
 				$this->getExceptionData(),
 				$this

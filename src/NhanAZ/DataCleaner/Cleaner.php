@@ -38,6 +38,64 @@ final class Cleaner {
 	}
 
 	/**
+	 * Cleans plugin data while moving deleted entries into a backup directory.
+	 * The backup directory itself is cleared before new entries are moved into it.
+	 *
+	 * @param string[] $plugins
+	 * @param string[] $exceptionData
+	 *
+	 * @return string[]
+	 */
+	public static function cleanWithBackup(string $pluginDataPath, array $plugins, array $exceptionData, string $backupPath): array {
+		if (!self::clearDirectory($backupPath)) {
+			throw new \RuntimeException("Unable to prepare the backup directory: " . $backupPath);
+		}
+		if (!is_dir($pluginDataPath)) {
+			return [];
+		}
+
+		$deleted = [];
+		$backupFolderName = basename(dirname(rtrim($backupPath, DIRECTORY_SEPARATOR)));
+		$directoryIterator = new \DirectoryIterator($pluginDataPath);
+		foreach ($directoryIterator as $fileInfo) {
+			$fileName = $fileInfo->getFilename();
+			// The backup lives inside DataCleaner's own plugin data and must survive this pass.
+			if ($fileName === $backupFolderName) {
+				continue;
+			}
+
+			$success = self::moveToBackup(
+				$fileInfo,
+				in_array($fileName, $plugins, true),
+				$exceptionData,
+				$backupPath
+			);
+			if ($success) {
+				$deleted[] = $fileName;
+			}
+		}
+
+		return $deleted;
+	}
+
+	/**
+	 * Removes all entries from a directory while keeping the directory itself.
+	 */
+	public static function clearDirectory(string $directory): bool {
+		if (!is_dir($directory) && !@mkdir($directory, 0777, true) && !is_dir($directory)) {
+			return false;
+		}
+
+		foreach (new \DirectoryIterator($directory) as $fileInfo) {
+			if (!$fileInfo->isDot() && !self::delete($fileInfo, false, [])) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
 	 * @param string[] $exceptionData
 	 *
 	 * @return bool true on success or false on failure.
@@ -115,5 +173,53 @@ final class Cleaner {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Checks whether the existing cleanup rules allow an entry to be deleted.
+	 * This is done before moving an entry so exception data is never backed up as deleted data.
+	 *
+	 * @param string[] $exceptionData
+	 */
+	private static function canDelete(\DirectoryIterator $fileInfo, bool $justEmpty, array $exceptionData): bool {
+		if ($fileInfo->isDir()) {
+			if (in_array($fileInfo->getFilename(), $exceptionData, true)) {
+				return false;
+			}
+
+			foreach (new \DirectoryIterator($fileInfo->getPathname()) as $child) {
+				if ($child->isDot()) {
+					continue;
+				}
+				if ($child->isFile()) {
+					if ($justEmpty || in_array($child->getFilename(), $exceptionData, true)) {
+						return false;
+					}
+				} elseif (!$child->isDir() || !self::canDelete($child, $justEmpty, $exceptionData)) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		return $fileInfo->isFile() && !in_array($fileInfo->getFilename(), $exceptionData, true);
+	}
+
+	/**
+	 * @param string[] $exceptionData
+	 */
+	private static function moveToBackup(
+		\DirectoryIterator $fileInfo,
+		bool $justEmpty,
+		array $exceptionData,
+		string $backupPath
+	): bool {
+		if (!self::canDelete($fileInfo, $justEmpty, $exceptionData)) {
+			return false;
+		}
+
+		$backupFilePath = rtrim($backupPath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $fileInfo->getFilename();
+		return @rename($fileInfo->getPathname(), $backupFilePath);
 	}
 }

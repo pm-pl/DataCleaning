@@ -10,6 +10,8 @@ final class CleanupTask extends AsyncTask {
 
 	private string $pluginDataPath;
 
+	private string $backupPath;
+
 	/** @var string[] */
 	private array $plugins;
 
@@ -20,8 +22,9 @@ final class CleanupTask extends AsyncTask {
 	 * @param string[] $plugins
 	 * @param string[] $exceptionData
 	 */
-	public function __construct(string $pluginDataPath, array $plugins, array $exceptionData, Main $plugin) {
+	public function __construct(string $pluginDataPath, string $backupPath, array $plugins, array $exceptionData, Main $plugin) {
 		$this->pluginDataPath = $pluginDataPath;
+		$this->backupPath = $backupPath;
 		$this->plugins = $plugins;
 		$this->exceptionData = $exceptionData;
 
@@ -30,7 +33,7 @@ final class CleanupTask extends AsyncTask {
 	}
 
 	public function onRun(): void {
-		$this->setResult(Cleaner::clean($this->pluginDataPath, $this->plugins, $this->exceptionData));
+		$this->setResult(Cleaner::cleanWithBackup($this->pluginDataPath, $this->plugins, $this->exceptionData, $this->backupPath));
 	}
 
 	public function onCompletion(): void {
